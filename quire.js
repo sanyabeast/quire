@@ -21,13 +21,47 @@
 			return Object.prototype.toString.call(it).match(/\[object (.*?)\]/)[1].toLowerCase() == type;
 		},
 		log : function(){
-			console.log.apply(console, Array.prototype.slice.call(arguments).unshift("Quire: "));
+			var args = Array.prototype.slice.call(arguments);
+			args.unshift("Quire:");
+			console.log.apply(console, args);
 		},
 		warn : function(){
-			console.warn.apply(console, Array.prototype.slice.call(arguments).unshift("Quire: "));
+			var args = Array.prototype.slice.call(arguments);
+			args.unshift("Quire:");
+			console.warn.apply(console, args);
 		},
 		error : function(){
-			console.error.apply(console, Array.prototype.slice.call(arguments).unshift("Quire: "));
+			var args = Array.prototype.slice.call(arguments);
+			args.unshift("Quire:");
+			console.error.apply(console, args);
+		},
+		genRandString : function(prefix, length){
+			var randString = "";
+
+			while(randString.length < length){
+				randString += (Math.random().toString(32).substring(3, 12));
+			}
+
+			randString = randString.substring(0, length);
+
+			return prefix ? [prefix, randString].join("-") : randString;
+		},
+		// esNext2esPrev : function(code){
+		// 	var imports = code.match(/import(?:["'\s]*([\w*{}\n\r\t, ]+)from\s*)?["'\s].*([@\w/_-]+)["'\s].*;$/gm);
+		// 	if (imports && imports.length){
+		// 		this.each(imports, function(importStatement, index){
+		// 			code = code.replace(new RegExp(importStatement, "g"), this.convertImport(importStatement));
+		// 		}, this);
+		// 	}
+
+		// 	console.log(code);
+		// 	return code;
+		// },
+		convertImport : function(statement){
+			if (statement.indexOf("from") < 0){
+
+			}
+			console.log(statement);
 		}
 	};
 
@@ -35,7 +69,7 @@
 
 	/*exports object*/
 	var Exports = function(quire){
-		quire.exports[quire.activeScriptID] = this;
+		quire.exports[quire.activeScriptId] = this;
 	};
 
 	/*Module object*/
@@ -45,10 +79,10 @@
 
 	Module.prototype = {
 		set exports($module){
-			var id = this.quire.activeScriptID;
+			var id = this.quire.activeScriptId;
 
 			if (_.typeis(id, "string")){
-				this.quire.registerModule(id, new Promise(function(resolve, reject){
+				this.quire.registerModule(id, quire.promise(function(resolve, reject){
 					resolve($module);
 				}));
 			} else {
@@ -66,6 +100,7 @@
 		}
 
 		this.module = new Module(this);
+		this.syncId = null;
 
 		this.inputScriptElement = document.currentScript;
 		this.cfg  = {}
@@ -74,8 +109,35 @@
 	};
 
 	Quire.prototype = {
-		get activeScriptID(){
-			return document.currentScript ? document.currentScript.dataset.quireID : "?";
+		promise : function(handler){
+			var promise = new Promise(function(resolve, reject){
+				handler(resolve, reject);
+			}).then(function(value){
+				promise.value = value;
+				return value
+			});
+
+			return promise;
+		},
+		get activeScriptId(){
+			var result = null;
+
+			if (this.syncId){
+				return this.syncId;
+			}
+
+			if (this.activeScript && this.activeScript.dataset.quireId){
+				result = this.activeScript.dataset.quireId;
+			} else if (this.activeScript){
+				result = this.activeScript.src;
+			} else {
+				result = _.genRandString("anon", 8);
+			}
+
+			return result;
+		},
+		get activeScript(){
+			return document.currentScript || null;
 		},
 		init : function(){
 			if (this.inputScriptElement.dataset.main){
@@ -83,13 +145,13 @@
 			}
 		},
 		loadScript : function(id){
-			return new Promise(function(resolve, reject){
+			return this.promise(function(resolve, reject){
 				var url = id;
 
 				if (id == "exports"){
 					var $exports = new Exports(this);
 
-					this.registerModule("exports", new Promise(function(resolve){
+					this.registerModule("exports", this.promise(function(resolve){
 						resolve($exports);
 					}));
 
@@ -103,20 +165,51 @@
 				}
 
 				var scriptNode = document.createElement("script");
-				scriptNode.dataset.quireID = id;
+				scriptNode.dataset.quireId = id;
 				scriptNode.async = true;
 
 				scriptNode.addEventListener("load", function(){
+					scriptNode.remove();
 					resolve(id);
 				}.bind(this), false);
 
-				scriptNode.addEventListener("error", function(){
-					reject(id);
+				scriptNode.addEventListener("error", function(evt){
+					this.loadScriptSync(id, resolve, reject);
 				}.bind(this), false);
 
 				scriptNode.src = this.processURL(url, true);
 				document.head.appendChild(scriptNode);
 			}.bind(this));
+		},
+		loadScriptSync : function(id, resolve, reject){
+			if (!_.typeis(this.modules[id], "undefined")){
+				return this.modules[id].value;
+			}
+
+			this.syncId = id;
+
+			var url = this.processURL(id);
+			var xhr = new XMLHttpRequest();
+			xhr.open("get", url, false);
+			xhr.send();
+			var code = xhr.responseText;
+			
+			try {
+				eval(code);
+				if (_.typeis(resolve, "function")){
+					resolve(id);
+				}
+			} catch (err){
+				_.error("LoadScriptSync: invalid JavaScript at " + url);
+				if (_.typeis(reject, "function")){
+					reject(id);
+				}
+			}
+
+			this.syncId = null;
+
+			return this.modules[id].value;
+
 		},
 		registerModule : function(id, $module){
 			this.modules[id] = $module;
@@ -127,35 +220,47 @@
 		processURL : function(url, isScript){
 			var result;
 
-			if (_.typeis(this.cfg.paths, "object") && _.typeis(this.cfg.paths[url], "string")){
-				url = this.cfg.paths[url];
-			}
-
-			if (url.lastIndexOf(".js") == url.length - 3){
-				result = [this.cfg.baseUrl || "", url].join("");
+			if (url.indexOf("://") > -1){
+				result = url;
 			} else {
-				result = [this.cfg.baseUrl || "", url, (".js")].join("");
-			}
+				if (_.typeis(this.cfg.paths, "object") && _.typeis(this.cfg.paths[url], "string")){
+					url = this.cfg.paths[url];
+				}
 
-			if (this.cfg.urlArgs){
-				result = [result, this.cfg.urlArgs].join("?");
+				if (url.lastIndexOf(".js") == url.length - 3){
+					result = [this.cfg.baseUrl || "", url].join("");
+				} else {
+					result = [this.cfg.baseUrl || "", url, (".js")].join("");
+				}
+
+				if (this.cfg.urlArgs){
+					result = [result, this.cfg.urlArgs].join("?");
+				}
 			}
 
 			return result;
 		},
 		require : function(deps, callback){
-			var resolvedDeps = this.resolveDeps(deps);
-			if (_.typeis(callback, "function")){
-				resolvedDeps.then(function(resolvedDeps){
-					callback.apply(window, resolvedDeps);
-				});
+			if (_.typeis(deps, "string")){
+				var id = deps;
+				var m = this.loadScriptSync(id);
+				return m;
+
+			} else if (_.typeis(deps, "array")){
+				var resolvedDeps = this.resolveDeps(deps);
+				if (_.typeis(callback, "function")){
+					resolvedDeps.then(function(resolvedDeps){
+						callback.apply(window, resolvedDeps);
+					});
+				}
+
+				return resolvedDeps;
 			}
 
-			return resolvedDeps;
+			
 		},
 		define : function(name, deps, factory){
-			var scriptNode = document.currentScript;
-			var id = scriptNode.dataset.quireID;
+			var id = this.activeScriptId;
 
 			switch (true){
 				case _.typeis(name, "string") && _.typeis(deps, "function"):
@@ -175,8 +280,9 @@
 				break;
 			}
 
+
 			if (_.typeis(this.modules[id], "undefined")){
-				this.registerModule(id, new Promise(function(resolve, reject){
+				this.registerModule(id, this.promise(function(resolve, reject){
 
 					this.resolveDeps(deps).then(function(resolvedDeps){
 						var $module = factory.apply(window, resolvedDeps);
@@ -194,7 +300,7 @@
 			
 		},
 		map : function(deps){
-			return new Promise(function(resolve, reject){
+			return this.promise(function(resolve, reject){
 				var result = [];
 				var totalCount = deps.length;
 				var registeredCount = 0;
@@ -221,7 +327,7 @@
 			}.bind(this));
 		},
 		resolveDeps : function(deps){
-			return new Promise(function(resolve, reject){
+			return this.promise(function(resolve, reject){
 				if (!deps || !deps.length){
 					resolve([]);
 					return;
