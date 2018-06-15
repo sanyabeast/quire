@@ -1,10 +1,5 @@
 "use strict";
 !(function(){
-	/*exports object*/
-	var Exports = function(quire){
-		quire.exports[document.currentScript ? document.currentScript.dataset.quireID : "?"] = this;
-	};
-
 	/*Helpers*/
 	var Tools = function(){};
 	Tools.prototype = {
@@ -24,10 +19,43 @@
 		},
 		typeis : function(it, type){
 			return Object.prototype.toString.call(it).match(/\[object (.*?)\]/)[1].toLowerCase() == type;
+		},
+		log : function(){
+			console.log.apply(console, Array.prototype.slice.call(arguments).unshift("Quire: "));
+		},
+		warn : function(){
+			console.warn.apply(console, Array.prototype.slice.call(arguments).unshift("Quire: "));
+		},
+		error : function(){
+			console.error.apply(console, Array.prototype.slice.call(arguments).unshift("Quire: "));
 		}
 	};
 
 	var _ = new Tools();
+
+	/*exports object*/
+	var Exports = function(quire){
+		quire.exports[quire.activeScriptID] = this;
+	};
+
+	/*Module object*/
+	var Module = function(quire){
+		this.quire = quire;
+	};
+
+	Module.prototype = {
+		set exports($module){
+			var id = this.quire.activeScriptID;
+
+			if (_.typeis(id, "string")){
+				this.quire.registerModule(id, new Promise(function(resolve, reject){
+					resolve($module);
+				}));
+			} else {
+				_.warn("Module.exports: Some of loaded modules cannot be identified", $module);
+			}
+		},
+	};
 
 	/*Quire*/
 	var Quire = function(){
@@ -37,16 +65,21 @@
 			}
 		}
 
-		this.scriptElement = document.currentScript;
+		this.module = new Module(this);
+
+		this.inputScriptElement = document.currentScript;
 		this.cfg  = {}
 		this.modules = {};
 		this.exports = {};
 	};
 
 	Quire.prototype = {
+		get activeScriptID(){
+			return document.currentScript ? document.currentScript.dataset.quireID : "?";
+		},
 		init : function(){
-			if (this.scriptElement.dataset.main){
-				this.loadScript(this.scriptElement.dataset.main);
+			if (this.inputScriptElement.dataset.main){
+				this.loadScript(this.inputScriptElement.dataset.main);
 			}
 		},
 		loadScript : function(id){
@@ -216,5 +249,6 @@
 	window.require.config = window.requirejs.config = window.quire.config;
 	window.define = window.quire.define;
 	window.define.amd = true;
+	window.module = quire.module;
 	window.quire.init();
 })()
