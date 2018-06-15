@@ -46,23 +46,32 @@
 
 			return prefix ? [prefix, randString].join("-") : randString;
 		},
-		// esNext2esPrev : function(code){
-		// 	var imports = code.match(/import(?:["'\s]*([\w*{}\n\r\t, ]+)from\s*)?["'\s].*([@\w/_-]+)["'\s].*;$/gm);
-		// 	if (imports && imports.length){
-		// 		this.each(imports, function(importStatement, index){
-		// 			code = code.replace(new RegExp(importStatement, "g"), this.convertImport(importStatement));
-		// 		}, this);
-		// 	}
+		fetchData : function(url, sync){
+			var xhr = new XMLHttpRequest();
+			xhr.open("get", url, false);
 
-		// 	console.log(code);
-		// 	return code;
-		// },
-		convertImport : function(statement){
-			if (statement.indexOf("from") < 0){
+			if (sync){
+				xhr.send();
+				return xhr.responseText;
+			} else {
+				return this.promise(function(resolve, reject){
+					xhr.onload = function (e) {
+					  	if (xhr.readyState === 4) {
+					  	  	if (xhr.status === 200) {
+					  	  	  	resolve(xhr.responseText);
+					  	  	} else {
+					  	  	  	reject(xhr);
+					  	  	}
+					  	}
+					};
+					xhr.onerror = function (e) {
+					  	reject(xhr);
+					};
 
+					xhr.send();
+				})
 			}
-			console.log(statement);
-		}
+		},
 	};
 
 	var _ = new Tools();
@@ -142,6 +151,7 @@
 		init : function(){
 			if (this.inputScriptElement.dataset.main){
 				this.loadScript(this.inputScriptElement.dataset.main);
+				this.inputScriptElement.remove();
 			}
 		},
 		loadScript : function(id){
@@ -189,10 +199,7 @@
 			this.syncId = id;
 
 			var url = this.processURL(id);
-			var xhr = new XMLHttpRequest();
-			xhr.open("get", url, false);
-			xhr.send();
-			var code = xhr.responseText;
+			var code = _.fetchData(url, true);
 			
 			try {
 				eval(code);
@@ -217,7 +224,7 @@
 		config : function(config){
 			this.cfg = _.merge(this.cfg, config);
 		},
-		processURL : function(url, isScript){
+		processURL : function(url){
 			var result;
 
 			if (url.indexOf("://") > -1){
@@ -350,11 +357,13 @@
 		}	
 	};
 
-	window.quire = new Quire();
-	window.require = window.requirejs = window.quire.require;
-	window.require.config = window.requirejs.config = window.quire.config;
-	window.define = window.quire.define;
+	var quire = new Quire();
+	window.require = window.requirejs = function(){ return quire.require.apply(quire, arguments) };
+	window.require.config = window.requirejs.config = function(){ return quire.config.apply(quire, arguments) };
+	window.define = function(){ return quire.define.apply(quire, arguments) };
 	window.define.amd = true;
 	window.module = quire.module;
-	window.quire.init();
+	
+	quire.init();
+
 })()
