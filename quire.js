@@ -230,8 +230,14 @@
 			if (url.indexOf("://") > -1){
 				result = url;
 			} else {
-				if (_.typeis(this.cfg.paths, "object") && _.typeis(this.cfg.paths[url], "string")){
-					url = this.cfg.paths[url];
+				if (_.typeis(this.cfg.paths, "object")){
+					_.each(this.cfg.paths, function(path, alias){
+						if (url.indexOf(alias + "/") == 0){
+							url = url.replace(alias + "/", path + "/");
+						} else if (url == alias){
+							url = path;
+						}
+					});
 				}
 
 				if (url.lastIndexOf(".js") == url.length - 3){
