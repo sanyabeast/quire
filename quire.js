@@ -1,6 +1,27 @@
 "use strict";
-!(function(){
-	/*Helpers*/
+var isNode = typeof global != "undefined";
+
+(function (root, factory) {
+    if (typeof define === "function" && define.amd) {
+        define(factory);
+    } else if (typeof module === "object" && module.exports) {
+        module.exports = factory(true);
+    } else {
+
+    	if (!isNode){
+    		var Quire = factory();
+	        var quire = window.quire = new Quire();
+			window.require = window.requirejs = function(){ return quire.require.apply(quire, arguments) };
+			window.require.config = window.requirejs.config = function(){ return quire.config.apply(quire, arguments) };
+			window.define = function(){ return quire.define.apply(quire, arguments) };
+			window.define.amd = true;
+			window.module = quire.module;
+			
+			quire.init();
+    	}
+    }
+}(this, function(){
+
 	var Tools = function(){};
 	Tools.prototype = {
 		each : function(list, iteratee, ctx){
@@ -363,13 +384,6 @@
 		}	
 	};
 
-	var quire = new Quire();
-	window.require = window.requirejs = function(){ return quire.require.apply(quire, arguments) };
-	window.require.config = window.requirejs.config = function(){ return quire.config.apply(quire, arguments) };
-	window.define = function(){ return quire.define.apply(quire, arguments) };
-	window.define.amd = true;
-	window.module = quire.module;
-	
-	quire.init();
+	return Quire;    
+}));
 
-})()
